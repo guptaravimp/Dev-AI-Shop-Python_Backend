@@ -1,33 +1,73 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from transformers import pipeline
 import re
+import os
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:5173"])  # ✅ Enable CORS for all routes
+CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])  # Allow both localhost variants
 
-classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+print("Starting lightweight Python backend...")
 
-CATEGORIES = ["saree", "kurti", "jeans" , "kurta","lehenga", "tshirt","pant", "checkout", "cancel order", "buy"]
+@app.route('/', methods=['GET'])
+def health_check():
+    return jsonify({
+        "status": "healthy",
+        "message": "Python AI Backend is running (lightweight mode)",
+        "model": "keyword-based"
+    })
 
 @app.route('/predict-intent', methods=['POST'])
 def predict_intent():
     data = request.get_json()
-    query = data.get('text', '').strip()
+    query = data.get('text', '').strip().lower()
 
     if not query:
         return jsonify({"error": "Missing input text"}), 400
 
-    result = classifier(query, candidate_labels=CATEGORIES)
-    top_label = result['labels'][0]
-    top_score = result['scores'][0]
+    # Use keyword-based intent extraction (fast and reliable)
+    intent = extract_keyword_intent(query)
     price = extract_price_from_text(query)
-
+    
+    print(f"Query: '{query}' -> Intent: '{intent}'")
+    
     return jsonify({
-        "intent": top_label if top_score > 0.5 else "",
-        "score": top_score,
-        "price": price
+        "intent": intent,
+        "score": 0.9 if intent else 0.0,  # High confidence for keyword match
+        "price": price,
+        "method": "keyword"
     })
+
+def extract_keyword_intent(text):
+    """Extract intent using simple keyword matching"""
+    # Create a mapping of keywords to intents
+    keyword_mapping = {
+        'jeans': 'jeans',
+        'denim': 'jeans',
+        'saree': 'saree',
+        'sari': 'saree',
+        'kurti': 'kurti',
+        'kurta': 'kurta',
+        'lehenga': 'lehenga',
+        'tshirt': 'tshirt',
+        't-shirt': 'tshirt',
+        'shirt': 'tshirt',
+        'pant': 'pant',
+        'pants': 'pant',
+        'trousers': 'pant',
+        'checkout': 'checkout',
+        'buy': 'buy',
+        'purchase': 'buy',
+        'order': 'buy',
+        'cancel': 'cancel order',
+        'return': 'cancel order'
+    }
+    
+    # Check for exact matches first
+    for keyword, intent in keyword_mapping.items():
+        if keyword in text:
+            return intent
+    
+    return ""
 
 def extract_price_from_text(text):
     match = re.search(r"(under|below|less than|under ₹?)\s*([\d]+)", text.lower())
@@ -36,4 +76,5 @@ def extract_price_from_text(text):
     return None
 
 if __name__ == '__main__':
-    app.run(port=5001)
+    port = int(os.environ.get('PORT', 5001))
+    app.run(host='0.0.0.0', port=port)
